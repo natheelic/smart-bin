@@ -1,5 +1,6 @@
 {
   "name": "iot-fan-controller",
+  "type": "module",
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
     "jsonwebtoken": "^9.0.3"
