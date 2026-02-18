@@ -1,438 +1,254 @@
+<!DOCTYPE html>
+<html lang="th">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pico Servo Controller</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body { background: #0f172a; font-family: 'Segoe UI', sans-serif; }
-
-        .glass {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            backdrop-filter: blur(12px);
-        }
-        .glass-dark {
-            background: rgba(0,0,0,0.25);
-            border: 1px solid rgba(255,255,255,0.07);
-        }
-
-        /* Gradient glow cards */
-        .card-swing  { background: linear-gradient(135deg,#2d1b69 0%,#1a0f3d 100%); border:1px solid #7c3aed44; }
-        .card-motion { background: linear-gradient(135deg,#3a2a0e 0%,#281e08 100%); border:1px solid #d9770644; }
-
-        /* Toggle switch */
-        .toggle-track {
-            width:52px; height:28px; border-radius:14px; position:relative;
-            cursor:pointer; transition:background .3s;
-        }
-        .toggle-track.on  { background: #22c55e; }
-        .toggle-track.off { background: #475569; }
-        .toggle-thumb {
-            width:22px; height:22px; border-radius:11px; background:#fff;
-            position:absolute; top:3px; transition:left .3s; box-shadow:0 1px 4px #0008;
-        }
-        .toggle-track.on  .toggle-thumb { left:27px; }
-        .toggle-track.off .toggle-thumb { left:3px; }
-
-        /* Sensor bar */
-        .sensor-bar-fill {
-            height:6px; border-radius:3px;
-            background: linear-gradient(90deg,#22c55e,#facc15,#ef4444);
-            transition: width .4s ease;
-        }
-
-        /* Pulse ring for online status */
-        @keyframes ring { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(2.2);opacity:0} }
-        .ring-anim { animation: ring 1.5s ease-out infinite; }
-
-        /* Mode pill */
-        .mode-auto   { background: linear-gradient(90deg,#16a34a,#15803d); }
-        .mode-manual { background: linear-gradient(90deg,#2563eb,#1d4ed8); }
-
-        /* Slide in */
-        @keyframes slideUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        .slide-up { animation: slideUp .4s ease forwards; }
-
-        input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
-        input[type=number] { -moz-appearance:textfield; }
-
-        .btn-press { transition: transform .1s, box-shadow .1s; }
-        .btn-press:active { transform:scale(0.95); }
-
-        ::-webkit-scrollbar { width:4px; }
-        ::-webkit-scrollbar-track { background:transparent; }
-        ::-webkit-scrollbar-thumb { background:#334155; border-radius:2px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Trash Bin Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap');
+    body{font-family:'Noto Sans Thai',sans-serif}
+    .bin-card{transition:all .3s ease}
+    .bin-card:hover{transform:translateY(-4px)}
+    .lid-open{animation:pulse-g 1.5s infinite}
+    @keyframes pulse-g{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 12px rgba(34,197,94,0)}}
+    .toggle{position:relative;width:52px;height:28px;background:#4b5563;border-radius:14px;cursor:pointer;transition:background .3s}
+    .toggle.on{background:#3b82f6}
+    .toggle::after{content:'';position:absolute;top:2px;left:2px;width:24px;height:24px;background:#fff;border-radius:50%;transition:transform .3s}
+    .toggle.on::after{transform:translateX(24px)}
+    .dist-bar{height:6px;border-radius:3px;background:#374151;overflow:hidden}
+    .dist-fill{height:100%;border-radius:3px;transition:width .5s,background .5s}
+    .log-row{animation:fadeIn .3s ease}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  </style>
 </head>
-<body class="min-h-screen flex items-start justify-center p-4 pt-6">
+<body class="bg-gray-950 text-white min-h-screen">
 
-<!-- ======== LOGIN MODAL ======== -->
-<div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center p-4"
-     style="background:rgba(0,0,0,0.85);backdrop-filter:blur(8px)">
-    <div class="glass rounded-2xl p-8 w-full max-w-xs slide-up">
-        <div class="text-center mb-7">
-            <div class="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center"
-                 style="background:linear-gradient(135deg,#3b82f6,#8b5cf6)">
-                <i class="fas fa-microchip text-white text-2xl"></i>
-            </div>
-            <h2 class="text-xl font-bold text-white">Pico Servo Controller</h2>
-            <p class="text-slate-400 text-sm mt-1">RPi Pico WH · 4 Servo · 4 Ultrasonic</p>
-        </div>
-        <div class="relative mb-3">
-            <i class="fas fa-lock absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
-            <input type="password" id="loginPassword"
-                class="w-full pl-9 pr-4 py-3 rounded-xl text-white text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
-                style="background:#1e293b;border:1px solid #334155"
-                placeholder="••••••••"
-                onkeydown="if(event.key==='Enter') login()">
-        </div>
-        <p id="loginError" class="text-red-400 text-xs text-center mb-3 hidden">
-            <i class="fas fa-exclamation-circle mr-1"></i>รหัสผ่านไม่ถูกต้อง
-        </p>
-        <button onclick="login()" class="btn-press w-full py-3 rounded-xl font-bold text-white text-sm shadow-lg"
-                style="background:linear-gradient(135deg,#3b82f6,#8b5cf6)">
-            เข้าสู่ระบบ
-        </button>
+<!--  LOGIN SCREEN  -->
+<div id="loginScreen" class="flex items-center justify-center min-h-screen">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-8 w-full max-w-sm shadow-2xl">
+    <div class="text-center mb-6">
+      <span class="text-5xl">🗑️</span>
+      <h1 class="text-xl font-bold mt-3">Smart Trash Bin</h1>
+      <p class="text-gray-400 text-sm">ระบบถังขยะอัจฉริยะ 4 ใบ</p>
     </div>
+    <input id="pwdInput" type="password" placeholder="รหัสผ่าน"
+      class="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-xl text-center focus:outline-none focus:border-blue-500 mb-4">
+    <button onclick="login()" id="loginBtn"
+      class="w-full py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-semibold transition">เข้าสู่ระบบ</button>
+    <p id="loginErr" class="text-red-400 text-sm text-center mt-3 hidden"></p>
+  </div>
 </div>
 
-<!-- ======== MAIN DASHBOARD ======== -->
-<div class="w-full max-w-md slide-up">
+<!--  DASHBOARD  -->
+<div id="dashboard" class="hidden">
 
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-5">
+  <!-- Header -->
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">🗑️</span>
         <div>
-            <h1 class="text-white font-bold text-lg leading-tight">Pico Servo Controller</h1>
-            <p class="text-slate-500 text-xs mt-0.5">RPi Pico WH · IoT Dashboard</p>
+          <h1 class="text-lg font-bold leading-tight">Smart Trash Bin</h1>
+          <p class="text-gray-500 text-xs">ถังขยะอัจฉริยะ 4 ใบ &mdash; Pico WH</p>
         </div>
-        <div class="flex items-center gap-3">
-            <!-- Device selector -->
-            <select id="deviceSelect" onchange="changeDevice()"
-                class="text-white text-xs font-bold px-3 py-1.5 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                style="background:#1e293b;border:1px solid #334155">
-                <option value="1">พัดลม 1</option>
-                <option value="2">พัดลม 2</option>
-            </select>
-            <!-- Online badge -->
-            <div id="statusBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
-                 style="background:#1e293b;border:1px solid #334155;color:#94a3b8">
-                <div class="w-2 h-2 rounded-full bg-slate-500"></div>
-                <span>–</span>
-            </div>
-        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="flex items-center gap-1.5">
+          <span id="dot" class="w-2.5 h-2.5 rounded-full bg-gray-600"></span>
+          <span id="dotTxt" class="text-xs text-gray-500">-</span>
+        </span>
+        <button onclick="setAllMode('auto')"
+          class="px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg text-xs font-semibold transition">🤖 Auto ทั้งหมด</button>
+        <button onclick="setAllMode('manual')"
+          class="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 rounded-lg text-xs font-semibold transition">🎮 Manual ทั้งหมด</button>
+        <button onclick="logout()"
+          class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs transition">ออก</button>
+      </div>
     </div>
+  </header>
 
-    <!-- Motion Status Banner -->
-    <div class="card-motion rounded-2xl p-4 mb-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <i class="fas fa-satellite-dish text-yellow-400 text-xl"></i>
-            <div>
-                <p class="text-slate-400 text-xs mb-0.5">สถานะ Ultrasonic</p>
-                <div id="motionBig" class="text-xl font-bold text-white leading-none">--</div>
-            </div>
-        </div>
-        <p id="motionSub" class="text-slate-500 text-xs">ไม่มีการเคลื่อนไหว</p>
+  <main class="max-w-7xl mx-auto p-4 md:p-6">
+
+    <!-- Bin Cards -->
+    <div id="binCards" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8"></div>
+
+    <!-- Logs -->
+    <div class="bg-gray-900 rounded-2xl p-5 border border-gray-800">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-sm flex items-center gap-1.5">📋 ประวัติการทำงาน</h2>
+        <button onclick="refresh()" class="text-xs px-2.5 py-1 bg-gray-800 hover:bg-gray-700 rounded-lg transition">🔄 รีเฟรช</button>
+      </div>
+      <div id="logList" class="space-y-1.5 max-h-60 overflow-y-auto text-sm"></div>
     </div>
-
-    <!-- Ultrasonic Sensor Distances -->
-    <div class="glass-dark rounded-2xl p-4 mb-4">
-        <div class="flex items-center gap-2 mb-3">
-            <i class="fas fa-radar text-blue-400 text-xs"></i>
-            <span class="text-slate-300 text-xs font-bold uppercase tracking-wider">Ultrasonic Sensors (HC-SR04)</span>
-        </div>
-        <div class="grid grid-cols-2 gap-3" id="sensorGrid">
-            <!-- Sensor cards generated by JS -->
-        </div>
-    </div>
-
-    <!-- Servo Status + Controls -->
-    <div class="glass-dark rounded-2xl p-4 mb-4">
-        <div class="flex items-center gap-2 mb-3">
-            <i class="fas fa-cog text-purple-400 text-xs"></i>
-            <span class="text-slate-300 text-xs font-bold uppercase tracking-wider">Servo Control (GP2–GP5)</span>
-        </div>
-        <div class="grid grid-cols-4 gap-2 mb-4" id="servoGrid">
-            <!-- Servo indicators generated by JS -->
-        </div>
-
-        <!-- Swing Toggle (full width) -->
-        <div id="manualControls" class="transition duration-300">
-            <div class="card-swing rounded-xl p-4 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                    <i id="swingIcon" class="fas fa-arrows-alt-h text-purple-400 text-2xl"></i>
-                    <div>
-                        <p class="text-white text-sm font-bold">ส่าย (Servo 2–4)</p>
-                        <p id="swingStatus" class="text-purple-300 text-xs mt-0.5">หยุดอยู่</p>
-                    </div>
-                </div>
-                <div id="toggleSwingTrack" onclick="toggleSwing()" class="toggle-track off">
-                    <div class="toggle-thumb"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <div class="flex items-center justify-between px-1">
-        <p class="text-slate-600 text-[11px]" id="lastUpdate">กำลังเชื่อมต่อ...</p>
-        <button onclick="logout()" class="text-slate-600 hover:text-red-400 text-[11px] transition btn-press">
-            <i class="fas fa-sign-out-alt mr-1"></i>ออกจากระบบ
-        </button>
-    </div>
+  </main>
 </div>
 
 <script>
-    // ============================================================
-    //  CONFIG
-    // ============================================================
-    const API_URL = '/api/device?id=1';
-    let state = { manual_mode: false, swing_command: false };
-    let authToken   = sessionStorage.getItem('fan_token');
-    let pollInterval = null;
+/* ── Config ── */
+const API = '/api';
+const COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b'];
+const EMOJI  = ['🗑️','♻️','☣️','🍂'];
+const ACT_LBL = {
+  lid_opened:'🔓 เปิดฝา', lid_closed:'🔒 ปิดฝา',
+  mode_changed:'⚙️ เปลี่ยนโหมด', threshold_changed:'📏 เปลี่ยนระยะ',
+  manual_open:'🎮 เปิดฝา (Manual)', manual_close:'🎮 ปิดฝา (Manual)',
+};
+let token = localStorage.getItem('token');
+let refreshTimer, logTimer;
 
-    // ============================================================
-    //  INIT GRIDS
-    // ============================================================
-    function initGrids() {
-        // Sensor grid
-        const sg = document.getElementById('sensorGrid');
-        sg.innerHTML = '';
-        for (let i = 0; i < 4; i++) {
-            sg.innerHTML += `
-            <div class="rounded-xl p-2.5" style="background:#0f172a;border:1px solid #1e293b">
-                <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-slate-400 text-[10px] font-bold">S${i+1}</span>
-                    <span class="text-[10px] font-bold" id="sDot${i}">●</span>
-                </div>
-                <p class="text-white font-bold text-base leading-none" id="sDist${i}">– cm</p>
-                <div class="mt-2 rounded-full overflow-hidden" style="height:5px;background:#1e293b">
-                    <div class="sensor-bar-fill" id="sBar${i}" style="width:0%"></div>
-                </div>
-                <p class="text-slate-600 text-[9px] mt-1">GP${6+i*2}/GP${7+i*2}</p>
-            </div>`;
-        }
+/* ── Auth ── */
+async function login(){
+  const pwd = document.getElementById('pwdInput').value.trim();
+  const errEl = document.getElementById('loginErr');
+  errEl.classList.add('hidden');
+  if(!pwd) return;
+  try{
+    const r = await fetch(`${API}/auth`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+    const d = await r.json();
+    if(!r.ok){ errEl.textContent = d.error||'ผิดพลาด'; errEl.classList.remove('hidden'); return; }
+    token = d.token; localStorage.setItem('token',token);
+    showDashboard();
+  }catch(e){ errEl.textContent='เชื่อมต่อไม่ได้'; errEl.classList.remove('hidden'); }
+}
+document.getElementById('pwdInput').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
 
-        // Servo grid
-        const srv = document.getElementById('servoGrid');
-        srv.innerHTML = '';
-        const labels = ['Servo 1','Servo 2','Servo 3','Servo 4'];
-        const gpins  = [2,3,4,5];
-        for (let i = 0; i < 4; i++) {
-            srv.innerHTML += `
-            <div class="rounded-xl p-2 text-center" style="background:#0f172a;border:1px solid #1e293b">
-                <div class="servo-arc mx-auto mb-1 flex items-center justify-center relative">
-                    <svg width="48" height="48" viewBox="0 0 48 48">
-                        <circle cx="24" cy="24" r="18" fill="none" stroke="#1e293b" stroke-width="3"/>
-                        <path id="srvArc${i}" d="" fill="none" stroke="#334155" stroke-width="3" stroke-linecap="round"/>
-                        <line id="srvNeedle${i}" x1="24" y1="24" x2="24" y2="8"
-                              stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round"/>
-                    </svg>
-                </div>
-                <p class="text-[9px] text-slate-400">${labels[i]}</p>
-                <p class="text-[9px] text-slate-600">GP${gpins[i]}</p>
-            </div>`;
-        }
-    }
+function logout(){ token=null; localStorage.removeItem('token'); clearInterval(refreshTimer); clearInterval(logTimer); location.reload(); }
 
-    function setServoAngle(i, angle) {
-        const needle = document.getElementById(`srvNeedle${i}`);
-        if (!needle) return;
-        const r = 16, rad = (angle - 90) * Math.PI / 180;
-        needle.setAttribute('x2', 24 + r * Math.sin(rad));
-        needle.setAttribute('y2', 24 - r * Math.cos(rad));
-    }
+function showDashboard(){
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+  refresh();
+  refreshTimer = setInterval(refresh, 1500);
+}
 
-    function updateSensorUI(index, distCm) {
-        const dot  = document.getElementById(`sDot${index}`);
-        const disp = document.getElementById(`sDist${index}`);
-        const bar  = document.getElementById(`sBar${index}`);
-        if (!dot) return;
-        const MAX_CM = 200;
-        if (distCm <= 0) {
-            dot.style.color = '#475569';
-            disp.textContent = '– cm';
-            bar.style.width = '0%';
-        } else {
-            const pct = Math.min(distCm / MAX_CM * 100, 100);
-            bar.style.width = pct + '%';
-            disp.textContent = distCm.toFixed(0) + ' cm';
-            dot.style.color = distCm < 50 ? '#ef4444' : distCm < 100 ? '#facc15' : '#22c55e';
-        }
-    }
+/* ── Fetch helpers ── */
+function authHeaders(){ return {'Content-Type':'application/json','Authorization':'Bearer '+token}; }
 
-    // ============================================================
-    //  AUTH
-    // ============================================================
-    async function login() {
-        const pw = document.getElementById('loginPassword').value;
-        const errEl = document.getElementById('loginError');
-        errEl.classList.add('hidden');
-        try {
-            const res = await fetch('/api/auth', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: pw })
-            });
-            if (res.ok) {
-                const { token } = await res.json();
-                sessionStorage.setItem('fan_token', token);
-                authToken = token;
-                document.getElementById('loginModal').classList.add('hidden');
-                startApp();
-            } else {
-                errEl.classList.remove('hidden');
-            }
-        } catch {
-            errEl.textContent = 'เกิดข้อผิดพลาด ลองใหม่';
-            errEl.classList.remove('hidden');
-        }
-    }
+async function refresh(){
+  try{
+    const r = await fetch(`${API}/device`,{headers:authHeaders()});
+    if(r.status===401){ logout(); return; }
+    const d = await r.json();
+    renderBins(d.bins||[]);
+    renderLogs(d.logs||[]);
+    setConn(true);
+  }catch{ setConn(false); }
+}
 
-    function logout() {
-        sessionStorage.removeItem('fan_token');
-        authToken = null;
-        if (pollInterval) clearInterval(pollInterval);
-        document.getElementById('loginModal').classList.remove('hidden');
-        document.getElementById('loginPassword').value = '';
-    }
+async function apiPost(action, payload){
+  await fetch(`${API}/device`,{method:'POST',headers:authHeaders(),body:JSON.stringify({from_app:true,action,payload})});
+  refresh();
+}
 
-    function getAuthHeaders() {
-        return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` };
-    }
+/* ── Actions ── */
+function toggleMode(id, cur){ apiPost('set_mode',{id, mode: cur==='auto'?'manual':'auto'}); }
+function setThreshold(id, val){ apiPost('set_threshold',{id, threshold_cm: parseFloat(val)}); }
+function manualLid(id, open){ apiPost('manual_lid',{id, open}); }
+function setAllMode(m){ apiPost('set_all_mode', m); }
 
-    // ============================================================
-    //  APP LIFECYCLE
-    // ============================================================
-    function startApp() {
-        initGrids();
-        fetchData();
-        pollInterval = setInterval(fetchData, 2000);
-    }
+/* ── Connection dot ── */
+function setConn(ok){
+  document.getElementById('dot').className = 'w-2.5 h-2.5 rounded-full '+(ok?'bg-green-500':'bg-red-500');
+  document.getElementById('dotTxt').textContent = ok?'เชื่อมต่อแล้ว':'ไม่ได้เชื่อมต่อ';
+}
 
-    // ============================================================
-    //  FETCH + UPDATE UI
-    // ============================================================
-    async function fetchData() {
-        try {
-            const res = await fetch(API_URL, { headers: { 'Authorization': `Bearer ${authToken}` } });
-            if (res.status === 401) { logout(); return; }
-            if (!res.ok) throw new Error('API Error');
-            const data = await res.json();
-            state = data;
-            updateUI(data);
-            checkOnlineStatus(data.device_last_seen);
-        } catch (e) {
-            console.error(e);
-            const badge = document.getElementById('statusBadge');
-            badge.style.borderColor = '#7f1d1d44';
-            badge.innerHTML = '<div class="w-2 h-2 rounded-full bg-red-500"></div><span class="text-red-400">Error</span>';
-        }
-    }
+/* ── Render Bins ── */
+function renderBins(bins){
+  const c = document.getElementById('binCards');
+  c.innerHTML = bins.map((b,i)=>{
+    const col = COLORS[i]||COLORS[0];
+    const emo = EMOJI[i]||'🗑️';
+    const isOpen = b.lid_status==='open';
+    const isMan  = b.mode==='manual';
+    const manOn  = b.manual_open;
 
-    function checkOnlineStatus(lastSeenStr) {
-        const badge = document.getElementById('statusBadge');
-        if (!lastSeenStr) {
-            badge.style.cssText = 'background:#1e293b;border:1px solid #334155;color:#94a3b8';
-            badge.innerHTML = '<div class="w-2 h-2 rounded-full bg-slate-500"></div><span>ไม่เคยออนไลน์</span>';
-            return;
-        }
-        const diff = (Date.now() - new Date(lastSeenStr).getTime()) / 1000;
-        if (diff > 15) {
-            badge.style.cssText = 'background:#2d0f0f;border:1px solid #7f1d1d;color:#f87171';
-            badge.innerHTML = '<div class="w-2 h-2 rounded-full bg-red-500 ring-anim"></div><span>ออฟไลน์</span>';
-        } else {
-            badge.style.cssText = 'background:#0f2a1a;border:1px solid #166534;color:#4ade80';
-            badge.innerHTML = '<div class="w-2 h-2 rounded-full bg-green-500" style="animation:ring 1.5s ease-out infinite;box-shadow:0 0 0 0 #4ade8066"></div><span>ออนไลน์</span>';
-        }
-    }
+    // distance bar
+    const pct = Math.min(100, Math.max(0, (b.distance_cm/200)*100));
+    let dCol = '#22c55e';
+    if(b.distance_cm < b.threshold_cm) dCol='#ef4444';
+    else if(b.distance_cm < b.threshold_cm*1.5) dCol='#f59e0b';
 
-    function updateUI(data) {
-        // Motion
-        const motionBig = document.getElementById('motionBig');
-        const motionSub = document.getElementById('motionSub');
-        if (data.motion_detected) {
-            motionBig.innerHTML   = '<span class="text-red-400">⚡ เจอ!</span>';
-            motionSub.textContent = 'ตรวจพบการเคลื่อนไหว';
-            motionSub.className   = 'text-red-400 text-xs animate-pulse';
-        } else {
-            motionBig.innerHTML   = '<span class="text-green-400">✓ ว่าง</span>';
-            motionSub.textContent = 'ไม่มีการเคลื่อนไหว';
-            motionSub.className   = 'text-slate-500 text-xs';
-        }
+    // device online check (seen within 10s)
+    const seen = b.device_last_seen ? (Date.now()-new Date(b.device_last_seen).getTime())/1000 : 9999;
+    const online = seen < 10;
 
-        // Sensor bars — ค่าจริงจาก device (ถ้ามี) หรือ simulate
-        const dist = data.motion_detected
-            ? [Math.random()*60+10, Math.random()*80+20, Math.random()*50+30, Math.random()*70+15]
-            : [0, 0, 0, 0];
-        for (let i = 0; i < 4; i++) updateSensorUI(i, dist[i]);
+    return `
+    <div class="bin-card bg-gray-900 rounded-2xl p-5 border border-gray-800 ${isOpen?'lid-open':''}" style="border-top:3px solid ${col}">
+      <!-- hdr -->
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-3xl ${isOpen?'rotate-[-12deg] scale-110':''} transition-transform">${emo}</span>
+          <div>
+            <h3 class="font-semibold text-sm">${b.name}</h3>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full ${isOpen?'bg-green-500/20 text-green-400':'bg-gray-700 text-gray-400'}">${isOpen?'🔓 เปิด':'🔒 ปิด'}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full ${online?'bg-blue-500/20 text-blue-400':'bg-red-500/20 text-red-400'} ml-1">${online?'● online':'○ offline'}</span>
+          </div>
+        </div>
+        <span class="text-2xl font-black" style="color:${col}">#${b.id}</span>
+      </div>
 
-        // Servo 1 ตาม motion (AUTO: หมุนเมื่อมีคน)
-        setServoAngle(0, data.motion_detected ? 180 : 90);
+      <!-- distance -->
+      <div class="mb-3">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-gray-400">ระยะทาง</span>
+          <span class="font-mono font-bold" style="color:${dCol}">${b.distance_cm>=999?'---':b.distance_cm.toFixed(1)} cm</span>
+        </div>
+        <div class="dist-bar"><div class="dist-fill" style="width:${100-pct}%;background:${dCol}"></div></div>
+      </div>
 
-        // Swing toggle
-        const swingTrack = document.getElementById('toggleSwingTrack');
-        const swingIcon  = document.getElementById('swingIcon');
-        const swingSt    = document.getElementById('swingStatus');
-        if (data.swing_command) {
-            swingTrack.className = 'toggle-track on';
-            swingIcon.className  = 'fas fa-arrows-alt-h text-purple-400 text-2xl';
-            swingSt.textContent  = 'กำลังส่าย...';
-            animateSwing(true);
-        } else {
-            swingTrack.className = 'toggle-track off';
-            swingIcon.className  = 'fas fa-arrows-alt-h text-slate-500 text-2xl';
-            swingSt.textContent  = 'หยุดอยู่';
-            animateSwing(false);
-            setServoAngle(1, 90); setServoAngle(2, 90); setServoAngle(3, 90);
-        }
+      <!-- mode toggle -->
+      <div class="flex items-center justify-between mb-3 p-2.5 bg-gray-800/60 rounded-xl">
+        <div>
+          <div class="text-xs font-semibold">${isMan?'🎮 Manual':'🤖 Auto'}</div>
+          <div class="text-[10px] text-gray-500">โหมดการทำงาน</div>
+        </div>
+        <div class="toggle ${isMan?'on':''}" onclick="toggleMode(${b.id},'${b.mode}')"></div>
+      </div>
 
-        document.getElementById('lastUpdate').innerText = 'อัปเดต: ' + new Date().toLocaleTimeString('th-TH');
-    }
+      <!-- threshold -->
+      <div class="mb-3 p-2.5 bg-gray-800/60 rounded-xl ${isMan?'opacity-40 pointer-events-none':''}">
+        <div class="flex justify-between text-xs mb-1.5">
+          <span class="text-gray-400">📏 ระยะตรวจจับ</span>
+          <span class="font-mono font-bold" id="thVal${b.id}">${b.threshold_cm} cm</span>
+        </div>
+        <input type="range" min="5" max="100" step="1" value="${b.threshold_cm}"
+          class="w-full accent-blue-500 cursor-pointer"
+          oninput="document.getElementById('thVal${b.id}').textContent=this.value+' cm'"
+          onchange="setThreshold(${b.id},this.value)">
+      </div>
 
-    // ============================================================
-    //  Servo Swing Animation (visual only)
-    // ============================================================
-    let swingRunning = false;
-    let swingTick = 0;
-    function animateSwing(enable) {
-        if (enable && !swingRunning) {
-            swingRunning = true;
-            (function tick() {
-                if (!swingRunning) return;
-                swingTick += 2;
-                const a = 90 + 45 * Math.sin(swingTick * Math.PI / 180);
-                setServoAngle(1, a); setServoAngle(2, a); setServoAngle(3, a);
-                requestAnimationFrame(tick);
-            })();
-        } else if (!enable) {
-            swingRunning = false;
-        }
-    }
+      <!-- manual buttons -->
+      <div class="grid grid-cols-2 gap-2 ${!isMan?'opacity-40 pointer-events-none':''}">
+        <button onclick="manualLid(${b.id},true)"
+          class="py-2 rounded-xl text-xs font-semibold transition ${manOn?'bg-green-600 text-white':'bg-gray-800 text-gray-400 hover:bg-green-600 hover:text-white'}">🔓 เปิดฝา</button>
+        <button onclick="manualLid(${b.id},false)"
+          class="py-2 rounded-xl text-xs font-semibold transition ${!manOn?'bg-red-600 text-white':'bg-gray-800 text-gray-400 hover:bg-red-600 hover:text-white'}">🔒 ปิดฝา</button>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-    // ============================================================
-    //  COMMANDS
-    // ============================================================
-    async function sendCommand(swing) {
-        state.swing_command = swing;
-        const res = await fetch(API_URL, {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ from_app: true, swing_command: swing })
-        });
-        if (res.status === 401) { logout(); return; }
-        fetchData();
-    }
+/* ── Render Logs ── */
+function renderLogs(logs){
+  const c = document.getElementById('logList');
+  if(!logs.length){ c.innerHTML='<p class="text-gray-600 text-center py-3">ไม่มีประวัติ</p>'; return; }
+  c.innerHTML = logs.map(l=>{
+    const t = new Date(l.created_at).toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit',day:'2-digit',month:'short'});
+    const lbl = ACT_LBL[l.action]||l.action;
+    return `<div class="log-row flex items-center justify-between px-3 py-1.5 bg-gray-800/40 rounded-lg">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs">${lbl}</span>
+        <span class="text-[10px] text-gray-500">ถัง #${l.bin_id}</span>
+        ${l.detail?`<span class="text-[10px] text-gray-600">(${l.detail})</span>`:''}
+      </div>
+      <span class="text-[10px] text-gray-600 whitespace-nowrap">${t}</span>
+    </div>`;
+  }).join('');
+}
 
-    function toggleSwing() { sendCommand(!state.swing_command); }
-
-    // ============================================================
-    //  BOOT
-    // ============================================================
-    if (authToken) {
-        document.getElementById('loginModal').classList.add('hidden');
-        startApp();
-    }
+/* ── Init ── */
+if(token) showDashboard();
 </script>
 </body>
 </html>

@@ -6,76 +6,104 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+/* ── helpers ── */
 function verifyAppToken(req) {
   const auth = req.headers['authorization'];
   if (!auth?.startsWith('Bearer ')) return false;
   try { jwt.verify(auth.split(' ')[1], process.env.JWT_SECRET); return true; }
   catch { return false; }
 }
-
 function isDeviceRequest(req) {
   return req.headers['x-device-secret'] === process.env.DEVICE_SECRET;
 }
 
 // ============================================================
-//  GET /api/device  — Browser ดึงสถานะทั้งหมด
+//  GET  /api/device — Dashboard ดึงสถานะถังทั้ง 4 ใบ
 // ============================================================
 async function handleGet(res) {
-  const [deviceRes, sensorsRes, servosRes] = await Promise.all([
-    supabase.from('pico_device').select('*').eq('id', 1).single(),
-    supabase.from('ultrasonic_sensors').select('*').order('id'),
-    supabase.from('servos').select('*').order('id'),
-  ]);
+  const { data: bins, error } = await supabase
+    .from('bins')
+    .select('*')
+    .order('id');
+  if (error) return res.status(500).json({ error: error.message });
 
-  if (deviceRes.error)  return res.status(500).json({ error: deviceRes.error.message });
-  if (sensorsRes.error) return res.status(500).json({ error: sensorsRes.error.message });
-  if (servosRes.error)  return res.status(500).json({ error: servosRes.error.message });
+  const { data: logs } = await supabase
+    .from('bin_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(30);
 
-  return res.status(200).json({
-    device:  deviceRes.data,
-    sensors: sensorsRes.data,
-    servos:  servosRes.data,
-  });
+  return res.status(200).json({ bins, logs: logs || [] });
 }
 
 // ============================================================
-//  POST /api/device  — จาก Browser (from_app: true)
+//  POST /api/device  — จาก Dashboard (from_app: true)
 // ============================================================
 async function handleAppPost(body, res) {
   const { action, payload } = body;
+  const now = new Date().toISOString();
 
-  // สลับโหมด: { action:'set_mode', payload:'auto'|'manual' }
+  // ─── เปลี่ยน Mode ถังเดียว ───
+  // { action:'set_mode', payload:{ id:1, mode:'manual' } }
   if (action === 'set_mode') {
-    const { error } = await supabase
-      .from('pico_device')
-      .update({ mode: payload, updated_at: new Date() })
-      .eq('id', 1);
+    const { id, mode } = payload;
+    if (!['auto', 'manual'].includes(mode))
+      return res.status(400).json({ error: 'mode ต้องเป็น auto หรือ manual' });
+
+    const update = { mode, updated_at: now };
+    if (mode === 'auto') update.manual_open = false;          // รีเซ็ตคำสั่ง manual
+
+    const { error } = await supabase.from('bins').update(update).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
+    await logAction(id, 'mode_changed', `เปลี่ยนเป็น ${mode}`);
     return res.status(200).json({ success: true });
   }
 
-  // ตั้ง threshold ของ sensor: { action:'set_threshold', payload:{ id:1, threshold_cm:80 } }
+  // ─── เปลี่ยน Mode ทุกถัง ───
+  // { action:'set_all_mode', payload:'auto'|'manual' }
+  if (action === 'set_all_mode') {
+    const mode = payload;
+    if (!['auto', 'manual'].includes(mode))
+      return res.status(400).json({ error: 'mode ต้องเป็น auto หรือ manual' });
+
+    const update = { mode, updated_at: now };
+    if (mode === 'auto') update.manual_open = false;
+
+    const { error } = await supabase.from('bins').update(update).gte('id', 1);
+    if (error) return res.status(500).json({ error: error.message });
+    for (let i = 1; i <= 4; i++) await logAction(i, 'mode_changed', `ทั้งหมดเปลี่ยนเป็น ${mode}`);
+    return res.status(200).json({ success: true });
+  }
+
+  // ─── ตั้ง Threshold ───
+  // { action:'set_threshold', payload:{ id:1, threshold_cm:30 } }
   if (action === 'set_threshold') {
     const { id, threshold_cm } = payload;
+    if (typeof threshold_cm !== 'number' || threshold_cm < 5 || threshold_cm > 200)
+      return res.status(400).json({ error: 'threshold ต้องอยู่ระหว่าง 5-200 cm' });
+
     const { error } = await supabase
-      .from('ultrasonic_sensors')
-      .update({ threshold_cm, updated_at: new Date() })
-      .eq('id', id);
+      .from('bins').update({ threshold_cm, updated_at: now }).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
+    await logAction(id, 'threshold_changed', `ตั้งเป็น ${threshold_cm} cm`);
     return res.status(200).json({ success: true });
   }
 
-  // สั่ง servo (manual): { action:'set_servo', payload:{ id:1, command_angle:90, enabled:true } }
-  if (action === 'set_servo') {
-    const { id, command_angle, enabled } = payload;
-    const update = { updated_at: new Date() };
-    if (command_angle !== undefined) update.command_angle = command_angle;
-    if (enabled       !== undefined) update.enabled       = enabled;
+  // ─── Manual เปิด/ปิดฝา ───
+  // { action:'manual_lid', payload:{ id:1, open:true } }
+  if (action === 'manual_lid') {
+    const { id, open } = payload;
+
+    // ตรวจสอบ manual mode
+    const { data: bin } = await supabase.from('bins').select('mode').eq('id', id).single();
+    if (!bin) return res.status(404).json({ error: 'ไม่พบถัง' });
+    if (bin.mode !== 'manual')
+      return res.status(400).json({ error: 'ถังไม่ได้อยู่ในโหมด manual' });
+
     const { error } = await supabase
-      .from('servos')
-      .update(update)
-      .eq('id', id);
+      .from('bins').update({ manual_open: !!open, updated_at: now }).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
+    await logAction(id, open ? 'manual_open' : 'manual_close', 'Manual control');
     return res.status(200).json({ success: true });
   }
 
@@ -83,39 +111,50 @@ async function handleAppPost(body, res) {
 }
 
 // ============================================================
-//  POST /api/device  — จาก Pico WH (x-device-secret header)
-//  Body: { sensors:[{id,distance_cm},...] }
-//  Response: { mode, thresholds:[{id,threshold_cm}], servos:[{id,command_angle,enabled}] }
+//  POST /api/device  — จาก Pico WH  (x-device-secret)
+//  Body : { bins:[{ id, distance_cm, lid_open }] }
+//  Reply: { bins:[{ id, mode, threshold_cm, manual_open }] }
 // ============================================================
 async function handleDevicePost(body, res) {
-  const now = new Date();
+  const now = new Date().toISOString();
 
-  // อัปเดตระยะทางจาก sensor ทุกตัว
-  if (body.sensors?.length) {
-    await Promise.all(body.sensors.map(s =>
-      supabase.from('ultrasonic_sensors')
-        .update({ distance_cm: s.distance_cm, updated_at: now })
-        .eq('id', s.id)
-    ));
+  // อัปเดตค่าจาก sensor
+  if (Array.isArray(body.bins)) {
+    for (const b of body.bins) {
+      const lid_status = b.lid_open ? 'open' : 'closed';
+      // ดึงสถานะเดิม เพื่อ log เมื่อเปลี่ยน
+      const { data: cur } = await supabase
+        .from('bins').select('lid_status').eq('id', b.id).single();
+
+      await supabase.from('bins').update({
+        distance_cm: b.distance_cm,
+        lid_status,
+        device_last_seen: now,
+        updated_at: now,
+      }).eq('id', b.id);
+
+      if (cur && cur.lid_status !== lid_status) {
+        await logAction(b.id,
+          lid_status === 'open' ? 'lid_opened' : 'lid_closed',
+          `ระยะ ${b.distance_cm} cm`);
+      }
+    }
   }
 
-  // อัปเดต device_last_seen
-  await supabase.from('pico_device')
-    .update({ device_last_seen: now })
-    .eq('id', 1);
+  // ส่งคำสั่งกลับ
+  const { data: bins } = await supabase
+    .from('bins')
+    .select('id, mode, threshold_cm, manual_open')
+    .order('id');
 
-  // ดึงคำสั่งกลับ
-  const [deviceRes, sensorsRes, servosRes] = await Promise.all([
-    supabase.from('pico_device').select('mode').eq('id', 1).single(),
-    supabase.from('ultrasonic_sensors').select('id, threshold_cm').order('id'),
-    supabase.from('servos').select('id, command_angle, enabled').order('id'),
-  ]);
+  return res.status(200).json({ bins: bins || [] });
+}
 
-  return res.status(200).json({
-    mode:       deviceRes.data.mode,
-    thresholds: sensorsRes.data,
-    servos:     servosRes.data,
-  });
+// ============================================================
+//  Helper — เขียน Log
+// ============================================================
+async function logAction(bin_id, action, detail) {
+  await supabase.from('bin_logs').insert({ bin_id, action, detail });
 }
 
 // ============================================================
