@@ -5,9 +5,13 @@
  *  ═══════════════════════════════════════════════════════════ */
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Servo.h>
+
+// WiFiClientSecure สำหรับ HTTPS
+WiFiClientSecure client;
 
 // ─── WiFi ────────────────────────────────────────────────
 const char* WIFI_SSID = ".@LICEC-Student-WiFi";
@@ -15,7 +19,7 @@ const char* WIFI_PASS = "";
 
 // ─── Backend ─────────────────────────────────────────────
 const char* SERVER_URL    = "https://smart-bin-enlic.vercel.app";   // เช่น https://smart-bin.vercel.app
-const char* DEVICE_SECRET = "B_IoulTaElgIHet3qWMtC3sa";        // ตรงกับ .env DEVICE_SECRET
+const char* DEVICE_SECRET = "BCyyH8VC3dR4fzHDP1RpcGfu";        // ตรงกับ .env DEVICE_SECRET
 
 // ─── Pin Map (ถัง 4 ใบ) ─────────────────────────────────
 //            Bin1  Bin2  Bin3  Bin4
@@ -24,7 +28,7 @@ const int ECHO[4]  = { 3,  7, 11, 15};
 const int SRVP[4]  = { 4,  8, 12, 16};
 
 // ─── Servo Angles ────────────────────────────────────────
-const int OPEN_ANGLE  = 90;
+const int OPEN_ANGLE  = 180;
 const int CLOSE_ANGLE = 0;
 
 // ─── Timing ──────────────────────────────────────────────
@@ -65,10 +69,17 @@ void closeLid(int i) { if ( lidOpen[i]) { servos[i].write(CLOSE_ANGLE); lidOpen[
 //  POST สถานะ → Backend  &  รับคำสั่งกลับ
 // ═════════════════════════════════════════════════════════
 void syncWithServer() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, skip sync");
+    return;
+  }
 
   HTTPClient http;
-  http.begin(String(SERVER_URL) + "/api/device");
+  
+  // ใช้ WiFiClientSecure กับ setInsecure() เพื่อข้าม SSL certificate verification
+  client.setInsecure();
+  http.begin(client, String(SERVER_URL) + "/api/device");
+  http.setTimeout(10000);  // timeout 10 วินาที
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-device-secret", DEVICE_SECRET);
 
@@ -99,8 +110,23 @@ void syncWithServer() {
       }
     }
     Serial.println("Sync OK");
+  } else if (code > 0) {
+    Serial.printf("Sync fail HTTP: %d\n", code);
+    String resp = http.getString();
+    Serial.println(resp);
   } else {
-    Serial.printf("Sync fail: %d\n", code);
+    // code < 0 = connection error
+    Serial.printf("Sync fail connection: %d (", code);
+    switch(code) {
+      case -1: Serial.print("CONNECTION_FAILED"); break;
+      case -2: Serial.print("SEND_HEADER_FAILED"); break;
+      case -3: Serial.print("SEND_PAYLOAD_FAILED"); break;
+      case -4: Serial.print("NOT_CONNECTED"); break;
+      case -5: Serial.print("CONNECTION_LOST"); break;
+      case -11: Serial.print("READ_TIMEOUT"); break;
+      default: Serial.print("UNKNOWN"); break;
+    }
+    Serial.println(")");
   }
   http.end();
 }
